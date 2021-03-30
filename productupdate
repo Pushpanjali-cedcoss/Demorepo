@@ -1,4 +1,4 @@
-public function updateProductandKeepLocation($productDatas, $sqsData)
+    public function updateProductandKeepLocation($productDatas, $sqsData)
     {
         $target = $this->di->getObjectManager()->get('\App\Shopifyhome\Components\Shop\Shop')->getUserMarkeplace();
         $helper = $this->di->getObjectManager()->get('\App\Shopifyhome\Components\Product\Helper');
@@ -14,17 +14,9 @@ public function updateProductandKeepLocation($productDatas, $sqsData)
                 if($key == 0){
                     $coreData = $helper->formatCoreDataForDetail($productData);
                     $containerId = $coreData['source_product_id'];
-                    if($this->di->getUser()->id=="1897" || $this->di->getUser()->id=="3728" || $this->di->getUser()->id=="3729" ){
-                        $mongo = $this->di->getObjectManager()->create('\App\Core\Models\BaseMongo');
-                        $mongo->setSource("product_container_" . $this->di->getUser()->id);
-                        $mongoCollection = $mongo->getPhpCollection();
-                        $out1 = $mongoCollection->aggregate([['$match' => ['details.source_product_id' => (string)$containerId]],['$unwind' => '$variants'], ['$project' =>['variants'=>true]] ])->toArray();
-                        $presize=count(json_decode(json_encode($out1),true));
-                    }
-                    
                     $updateProductDetails = $handleUpdateData->updateWebhookProductDetails($coreData);
 
-//                    $this->di->getLog()->logContent('PROCESS 000002 | Import | updateProductandKeepLocation | updateProduct Details response  = '.json_encode($updateProductDetails),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+                    $this->di->getLog()->logContent('PROCESS 000002 | Import | updateProductandKeepLocation | updateProduct Details response  = '.json_encode($updateProductDetails),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
 
                     if(!$updateProductDetails['success']){
                         $data['details'] = $helper->formatCoreDataForDetail($productData);
@@ -33,7 +25,7 @@ public function updateProductandKeepLocation($productDatas, $sqsData)
                         $productContainer->setSource("product_container_".$this->di->getUser()->id);
                         $res = $productContainer->createProductsAndAttributes([$data], Import::MARKETPLACE_CODE, 0, $this->di->getUser()->id);
 
-//                        $this->di->getLog()->logContent('PROCESS 000020 | Import | updateProductandKeepLocation | create new product response  = '.json_encode($res).' | Procduct Container : '.json_encode($productContainer->getSource()),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+                        $this->di->getLog()->logContent('PROCESS 000020 | Import | updateProductandKeepLocation | create new product response  = '.json_encode($res).' | Procduct Container : '.json_encode($productContainer->getSource()),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
                         if($res[0]['success'] && $productData['quantity']==0){
                             $usr = $this->di->getObjectManager()->get('App\Core\Models\User\Details')->getDataByUserID($this->di->getUser()->id, $target);
                             //$this->di->getObjectManager()->get('\App\Shopifyhome\Components\Product\Inventory\Import')->getProductInventory([$productData['inventory_item_id']], $usr['remote_shop_id']);
@@ -47,9 +39,9 @@ public function updateProductandKeepLocation($productDatas, $sqsData)
                                 $sqsData['queue_name'] = 'facebook_webhook_inventory_update';
                                 $sqsData['data']['container_id'] = $containerId;
                                 $this->pushToQueue($sqsData);
-//                                $this->di->getLog()->logContent(json_encode($sqsData),'info','shopify'.DS.'global'.DS.date("Y-m-d").DS.'webhook_users_products_update_sqs.log');
+                                $this->di->getLog()->logContent(json_encode($sqsData),'info','shopify'.DS.'global'.DS.date("Y-m-d").DS.'webhook_users_products_update_sqs.log');
                             } else {
-//                                $this->di->getLog()->logContent(json_encode($sqsData),'info','shopify'.DS.'global'.DS.date("Y-m-d").DS.'webhook_users_products_update_error_flag.log');
+                                $this->di->getLog()->logContent(json_encode($sqsData),'info','shopify'.DS.'global'.DS.date("Y-m-d").DS.'webhook_users_products_update_error_flag.log');
                             }
                         }
                         $newProductFlag = true;
@@ -82,58 +74,34 @@ public function updateProductandKeepLocation($productDatas, $sqsData)
 
                 $variantIds[] = $productData['source_variant_id'];
             }
-            $mongo = $this->di->getObjectManager()->create('\App\Core\Models\BaseMongo');
-            $mongo->setSource("product_container_" . $this->di->getUser()->id);
-            $mongoCollection = $mongo->getPhpCollection();
-            $con1 = $mongoCollection->find(['$and'=>[
-                ['details.source_product_id' => (string)$containerId],
-                ['variants.type' => "simple"],
-                ['variants.type' => "variation"]
-            ]])->toArray();
-            $con2=$mongoCollection->find(['$and'=>[
-                ['details.source_product_id' => (string)$containerId],
-                ['variants.type' => "simple"],
-                ['variants.variant_attributes' => [ '$exists' => true ]]
-            ]])->toArray();
-            $result1=json_decode(json_encode($con1),true);
-            $result2=json_decode(json_encode($con2),true);
-            if($this->di->getUser()->id=="1897" || $this->di->getUser()->id=="3728" || $this->di->getUser()->id=="3729"){
-                $out2 = $mongoCollection->aggregate([['$match' => ['details.source_product_id' => (string)$containerId]],['$unwind' => '$variants'], ['$project' =>['variants'=>true]] ])->toArray();
-                $postsize=count(json_decode(json_encode($out2),true));
-                if($presize<$postsize){
-                    $newProductFlag = true;
-                }
-            }
-            if(!empty($result1) || !empty($result2)){
-                $newProductFlag = true;
-            }
             $this->validateAndDeleteVariants($variantIds, $containerId);
+
         }catch (\Exception $e) {
             $flag=$this->di->getObjectManager()->get('\App\Shopifyhome\Components\Utility')->exceptionHandler($e->getMessage());
             if($flag){
-//                $this->di->getLog()->logContent('Retry Product Update Webhook while exception occurs'.json_encode($sqsData),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'exception_webhook_product_import.log');
-                $runAfterTime= time() + 15//////*60;
+                $this->di->getLog()->logContent('Retry Product Update Webhook while exception occurs'.json_encode($sqsData),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'exception_webhook_product_import.log');
+                $runAfterTime= time() + 15*60;
                 $this->pushToQueue($sqsData , $runAfterTime);
                 return true;
             }else{
-//                $this->di->getLog()->logContent('Exception = '.$e->getMessage(),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'another_exception.log');
+                $this->di->getLog()->logContent('Exception = '.$e->getMessage(),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'another_exception.log');
             }
         }
 
         if($newProductFlag) {
 
-//            $this->di->getLog()->logContent('PROCESS 000003 | Import | updateProductandKeepLocation | calling facebook to create product(s) | Procduct Container : '.json_encode($productContainer->getSource())." Con Id = ".json_encode($containerId),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
-//            $this->di->getLog()->logContent(" Con Id = ".json_encode($containerId),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+            $this->di->getLog()->logContent('PROCESS 000003 | Import | updateProductandKeepLocation | calling facebook to create product(s) | Procduct Container : '.json_encode($productContainer->getSource())." Con Id = ".json_encode($containerId),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+            $this->di->getLog()->logContent(" Con Id = ".json_encode($containerId),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
 
             $fbResponse = $this->di->getObjectManager()->get('\App\Facebookhome\Components\Helper')->createProducts(['selected_products' => [$containerId]]);
 
-//            $this->di->getLog()->logContent('PROCESS 000004 | Import | updateProductandKeepLocation | facebook response :'.json_encode($fbResponse),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+            $this->di->getLog()->logContent('PROCESS 000004 | Import | updateProductandKeepLocation | facebook response :'.json_encode($fbResponse),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
         } else {
-//            $this->di->getLog()->logContent('PROCESS 000003 | Import | updateProductandKeepLocation | calling facebook to update product  | Procduct Container : '.json_encode($productContainer->getSource()),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+            $this->di->getLog()->logContent('PROCESS 000003 | Import | updateProductandKeepLocation | calling facebook to update product  | Procduct Container : '.json_encode($productContainer->getSource()),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
 
             $fbResponse = $this->di->getObjectManager()->get('\App\Facebookhome\Components\Helper')->updateProducts(['selected_products' => [$containerId]]);
 
-//            $this->di->getLog()->logContent('PROCESS 000004 | Import | updateProductandKeepLocation |  facebook response : '.json_encode($fbResponse),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
+            $this->di->getLog()->logContent('PROCESS 000004 | Import | updateProductandKeepLocation |  facebook response : '.json_encode($fbResponse),'info','shopify'.DS.$this->di->getUser()->id.DS.'product'.DS.date("Y-m-d").DS.'webhook_product_import.log');
         }
         return true;
     }
